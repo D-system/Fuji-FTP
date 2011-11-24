@@ -2,6 +2,7 @@
 require "socket"
 include Socket::Constants
 load "volcano_ftp_client.rb"
+require 'yaml'
 
 # Volcano FTP contants
 BINARY_MODE = 0
@@ -11,13 +12,26 @@ MAX_PORT = 65534
 
 # Volcano FTP class
 class VolcanoFtp
-  def initialize(port)
+  def initialize(port, yml_fn)
     # Prepare instance
     @socket = TCPServer.new("", port)
     @socket.listen(42)
 
+    @threads = []
     @transfert_type = BINARY_MODE
     @tsocket = nil
+    begin
+      @yml = YAML.load(File.open(yml_fn, 'r'))
+    rescue ArgumentError => e
+      puts "Could not parse configuration file: #{e.message}"
+      puts "Exiting"
+      Kernel.exit -1
+      rescue SystemCallError => e
+      puts e
+      puts "Exiting"
+      Kernel.exit -1
+    end
+    p @yml
     puts "Server ready to listen for clients on port #{port}"
   end
 
@@ -25,19 +39,20 @@ class VolcanoFtp
     while (42)
       selectResult = IO.select([@socket], nil, nil, 0.1)
       if selectResult == nil or selectResult[0].include?(@socket) == false
-        @pids.each do |pid|
-          if not Process.waitpid(pid, Process::WNOHANG).nil?
+        @threads.each do |t|
+          if t.stop?
             ####
             # Do stuff with newly terminated processes here
             ####
-            @pids.delete(pid)
+            @threads.delete(t)
           end
         end
-        # p @pids
       else
         cs,  = @socket.accept
-        Thread.new(cs) do |cs|
-          VolcanoFtpClient.new(cs).run
+        p cs.inspect + " dans le else"
+        Thread.new(cs, @yml) do |cs, yml|
+          @threads << Thread.current
+          VolcanoFtpClient.new(cs, yml).run
           Thread.current.terminate
         end
       end
@@ -54,9 +69,10 @@ end
 
 if ARGV[0]
   begin
-    ftp = VolcanoFtp.new(ARGV[0])
+    ftp = VolcanoFtp.new(ARGV[0], 'fuji_conf.yml')
     ftp.run
-  rescue SystemExit, Interrupt
+  rescue SystemExit
+  rescue Interrupt
     puts "Caught CTRL+C, exiting"
   rescue RuntimeError => e
     puts e
