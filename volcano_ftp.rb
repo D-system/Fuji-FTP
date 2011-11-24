@@ -16,7 +16,6 @@ class VolcanoFtp
     @socket = TCPServer.new("", port)
     @socket.listen(42)
 
-    @pids = []
     @transfert_type = BINARY_MODE
     @tsocket = nil
     puts "Server ready to listen for clients on port #{port}"
@@ -36,12 +35,11 @@ class VolcanoFtp
         end
         # p @pids
       else
-        @cs,  = @socket.accept
-        @pids << Kernel.fork do
-          ftp = VolcanoFtpClient.new(@cs)
-          ftp.run
+        cs,  = @socket.accept
+        Thread.new(cs) do |cs|
+          VolcanoFtpClient.new(cs).run
+          Thread.current.terminate
         end
-        Kernel.exit!
       end
     end
   end
