@@ -1,6 +1,4 @@
 
-require 'yaml'
-
 # Handle each client
 class VolcanoFtpClient
   def initialize(socket, yml)
