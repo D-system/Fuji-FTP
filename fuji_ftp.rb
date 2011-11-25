@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 require "socket"
 include Socket::Constants
-load "volcano_ftp_client.rb"
+load "fuji_ftp_client.rb"
 require 'yaml'
 
 # Volcano FTP contants
@@ -31,7 +31,6 @@ class VolcanoFtp
       puts "Exiting"
       Kernel.exit -1
     end
-    p @yml
     puts "Server ready to listen for clients on port #{port}"
   end
 
@@ -52,7 +51,7 @@ class VolcanoFtp
         p cs.inspect + " dans le else"
         Thread.new(cs, @yml) do |cs, yml|
           @threads << Thread.current
-          VolcanoFtpClient.new(cs, yml).run
+          FujiFtpClient.new(cs, yml).run
           Thread.current.terminate
         end
       end

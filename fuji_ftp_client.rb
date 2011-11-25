@@ -1,6 +1,6 @@
 
 # Handle each client
-class VolcanoFtpClient
+class FujiFtpClient
   def initialize(socket, yml)
     @cs = socket
     @yml = yml
