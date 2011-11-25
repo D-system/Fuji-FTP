@@ -69,7 +69,9 @@ class VolcanoFtpClient
       ####
       begin
         func = method('ftp_' + line[/[\s]*([\w]*)[\s]+(.*)/, 1].downcase);
-        func.call $1, $2
+        if func.call $1, $2 == -1
+          break
+        end
       rescue NameError => e
         puts e
         ftp_500 $1, $2
