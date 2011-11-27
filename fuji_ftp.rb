@@ -14,7 +14,17 @@ MAX_PORT = 65534
 class VolcanoFtp
   def initialize(port, yml_fn)
     # Prepare instance
-    @socket = TCPServer.new("", port)
+    begin
+      @socket = TCPServer.new(port)
+    rescue SystemCallError => e
+      puts e.message
+      puts " -> Port #{port} already in use ?"
+      Kernel.exit -1
+    rescue => e
+      puts e.message
+      puts " -> Wrong parameter ?"
+      Kernel.exit -1
+    end
     @socket.listen(42)
 
     @threads = []
@@ -48,7 +58,6 @@ class VolcanoFtp
         end
       else
         cs,  = @socket.accept
-        p cs.inspect + " dans le else"
         Thread.new(cs, @yml) do |cs, yml|
           @threads << Thread.current
           FujiFtpClient.new(cs, yml).run
