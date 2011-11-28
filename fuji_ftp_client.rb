@@ -47,16 +47,32 @@ class FujiFtpClient
   def do_data_accept
     puts "do_data_accept"
     begin
-      @cs[:data] = @cs[:data_accept].accept
+      @cs[:data] = @cs[:data_accept].accept_nonblock
       @cs[:data].close_read
-    rescue SystemCallError
+      @cs[:cmd].write "150 data connection opened\r\n"
+    rescue SystemCallError => e
+      p e
+      p @cs
       puts "Can't accept data connection"
+      ftp_425
       return false
     rescue
       puts e.message
       puts "Something goes very bad to get data coonection"
       return false
     end
+    true
+  end
+
+  def send_data(data)
+    if get_data_socket == false
+      return false
+    end
+    p data
+    @cs[:data].write data
+    @cs[:data].close
+    # @cs[:data] = nil
+    @cs[:cmd].write "226 Transfer complete.\r\n"
     true
   end
 
@@ -140,24 +156,19 @@ class FujiFtpClient
     if not @connected
       return ftp_530(c, args)
     end
-    puts "ftp_list"
-    if (s = get_data_socket) == false
-      return ftp_425(c, args)
-    end
-    puts "ftp_list apres get_data_socket"
-    # p @yml['ftp']['root_folder'] + args.strip
+    # res = ""
+    # f = @yml['ftp']['root_folder'] + args.strip
+    # Dir.entries(f).each do |entry|
+    #   res += entry + "\r\n"
+    # end
+    # puts ">>>>#{ls}<<<<"
+    # @cs[:data].write(res)
+    # puts "list send"            # 
+    # @cs[:data].close
+    ls = `ls -lA`
     res = ""
-    puts "avant le f"
-    f = @yml['ftp']['root_folder'] + args.strip
-    puts "apres le f"
-    p f
-    Dir.entries(f).each do |entry|
-      res += entry + "\r\n"
-    end
-    puts "list build"
-    @cs[:data].write(res)
-    puts "list send"
-    @cs[:data].close
+    ls.each_line { |line| res += line.strip + "\r\n"}
+    send_data(res)
     0
   end
 
@@ -214,6 +225,16 @@ class FujiFtpClient
     0
   end
 
+  def ftp_cwd(c, args)
+    if not @connected
+      return ftp_530(c, args)
+    end
+    ### check if not before root_folder
+    @wd = @yml['ftp']['root_folder'] + args.strip
+    @cs[:cmd].write "250 CWD command successful.\r\n"
+    0
+  end
+
   def welcome
     return  "220-\r\n\r\n Welcome to Fuji FTP server !\r\n\r\n
  ______     _ _   ______ _______ _____  \r\n
@@ -258,7 +279,9 @@ class FujiFtpClient
           ####
           # passive data socket
           ####
-          if not do_data_accept
+          if not @cs[:data].nil?
+            @cs[:data] = nil
+          elsif not do_data_accept
             break
           end
           puts "passive data socket"
