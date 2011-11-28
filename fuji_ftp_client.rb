@@ -19,7 +19,7 @@ class FujiFtpClient
   def get_data_socket
     if @passive.nil?
       ftp_425
-      return -1
+      return false
     end
     if @passive
       puts "get_data_socket passive connection !"
@@ -29,19 +29,19 @@ class FujiFtpClient
       if not @cs[:data].nil?
         return @cs[:data]
       end
-      if do_data_accept == 0
+      if do_data_accept
         return @cs[:data]
       else
-        return -1
+        return false
       end
     else
       puts "get_data_socket Active connection !"
       ####
       # connect to client
       ####
-      return -1
+      return false
     end
-    -1
+    false
   end
 
   def do_data_accept
@@ -51,13 +51,13 @@ class FujiFtpClient
       @cs[:data].close_read
     rescue SystemCallError
       puts "Can't accept data connection"
-      return -1
+      return false
     rescue
       puts e.message
       puts "Something goes very bad to get data coonection"
-      return -1
+      return false
     end
-    0
+    true
   end
 
   def ftp_502(c, args = nil)
@@ -140,18 +140,24 @@ class FujiFtpClient
     if not @connected
       return ftp_530(c, args)
     end
-    # if (s = get_data_connection).nil?
-    #   return ftp_425(c, args)
-    # end
-    if not (s = get_data_socket) == 0
+    puts "ftp_list"
+    if (s = get_data_socket) == false
       return ftp_425(c, args)
     end
+    puts "ftp_list apres get_data_socket"
+    # p @yml['ftp']['root_folder'] + args.strip
     res = ""
-    Dir.entries(@yml['ftp']['root_folder'] + args.strip!).each do |entry|
-      res << entry << "\r\n"
+    puts "avant le f"
+    f = @yml['ftp']['root_folder'] + args.strip
+    puts "apres le f"
+    p f
+    Dir.entries(f).each do |entry|
+      res += entry + "\r\n"
     end
+    puts "list build"
     @cs[:data].write(res)
-    # ftp_502 c, args
+    puts "list send"
+    @cs[:data].close
     0
   end
 
@@ -170,6 +176,7 @@ class FujiFtpClient
         return -1
       end
     end
+    # get public_ip from file configuration or ip of computeur
     if @yml['ftp'].include?('public_ip') and not @yml['ftp']['public_ip'].nil?
       ip = @yml['ftp']['public_ip']
     else
@@ -179,6 +186,7 @@ class FujiFtpClient
     p1 = @data_port / 256
     p2 = @data_port % 256
     @cs[:cmd].write "227 Entering Passive Mode (#{$1},#{$2},#{$3},#{$4},#{p1},#{p2})\r\n"
+    @passive = true
     0
   end
 
@@ -250,11 +258,11 @@ class FujiFtpClient
           ####
           # passive data socket
           ####
-          if not do_data_accept == 0
+          if not do_data_accept
             break
           end
           puts "passive data socket"
-          Kernel.exit -1
+          # Kernel.exit -1
         end
       end
     end
