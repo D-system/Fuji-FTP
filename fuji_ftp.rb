@@ -26,9 +26,7 @@ class VolcanoFtp
       Kernel.exit -1
     end
     @socket.listen(42)
-
     @threads = []
-    @transfert_type = BINARY_MODE
     @tsocket = nil
     begin
       @yml = YAML.load(File.open(yml_fn, 'r'))
