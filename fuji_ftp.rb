@@ -37,7 +37,7 @@ class FujiFtp
   end
 
   def run
-    while (42)
+    loop do
       selectResult = IO.select([@socket], nil, nil, 0.1)
       if selectResult == nil or selectResult[0].include?(@socket) == false
         @threads.each do |t|
