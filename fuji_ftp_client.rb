@@ -48,7 +48,6 @@ class FujiFtpClient
         return false
       end
       @cs[:data] = @cs[:data_accept].accept_nonblock
-      @cs[:data].close_read
       @cs[:cmd].write "150 data connection opened\r\n"
       return true
     rescue SystemCallError => e
@@ -164,7 +163,7 @@ class FujiFtpClient
     @name = nil
     if not @yml['ftp']['users'].has_key?(args)
       @cs[:cmd].close
-      -1
+      return -1
     end
     @name = args
     @cs[:cmd].write "331 User name okay, need password.\r\n"
