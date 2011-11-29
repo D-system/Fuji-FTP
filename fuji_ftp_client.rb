@@ -10,7 +10,7 @@ class FujiFtpClient
     @yml = yml
     @connected = false
     @name = nil
-    @wd = '/'
+    @wd = @yml['ftp']['root_folder']
     @passive = nil
     @data_port = nil
     @data_socket = nil
@@ -22,10 +22,6 @@ class FujiFtpClient
       return false
     end
     if @passive
-      puts "get_data_socket passive connection !"
-      ####
-      # wait client on :data_accept if :data not set
-      ####
       if not @cs[:data].nil?
         return @cs[:data]
       end
@@ -35,7 +31,7 @@ class FujiFtpClient
         return false
       end
     else
-      puts "get_data_socket Active connection !"
+      puts "get_data_socket active connection !"
       ####
       # connect to client
       ####
@@ -45,14 +41,18 @@ class FujiFtpClient
   end
 
   def do_data_accept
-    puts "do_data_accept"
     begin
+      if IO.select([@cs[:data_accept]], nil, nil, 20).nil?
+        puts "Can't accept data connection, timeout"
+        ftp_425
+        return false
+      end
       @cs[:data] = @cs[:data_accept].accept_nonblock
       @cs[:data].close_read
       @cs[:cmd].write "150 data connection opened\r\n"
+      return true
     rescue SystemCallError => e
       p e
-      p @cs
       puts "Can't accept data connection"
       ftp_425
       return false
@@ -61,29 +61,49 @@ class FujiFtpClient
       puts "Something goes very bad to get data coonection"
       return false
     end
-    true
   end
 
-  def send_data(data)
+  def send_data(data, multi_send = false)
     if get_data_socket == false
       return false
     end
-    p data
     @cs[:data].write data
-    @cs[:data].close
-    # @cs[:data] = nil
-    @cs[:cmd].write "226 Transfer complete.\r\n"
+    if multi_send == false or (multi_send == true and data.size == 0)
+      @cs[:data].close
+      @cs[:data] = nil
+      @cs[:cmd].write "226 Transfer complete.\r\n"
+    end
     true
   end
 
-  def ftp_502(c, args = nil)
-    puts "Command '#{c}' not implemented"
-    @cs[:cmd].write "502 Command '#{c}' not implemented\r\n"
-    0
+  def get_realpath(path)
+    begin
+      res = File.realpath(path).to_s
+    rescue => e
+      p e
+      return nil
+    end
+    if not res[0..@yml['ftp']['root_folder'].size - 1] == @yml['ftp']['root_folder']
+      return nil
+    end
+    return res
   end
 
-  def ftp_530(c = nil, args = nil)
-    @cs[:cmd].write "530 Not logged in.\r\n"
+  def get_realdirpath(path)
+    begin
+      res = File.realdirpath(path).to_s
+    rescue => e
+      p e
+      return nil
+    end
+    if not res[0..@yml['ftp']['root_folder'].size - 1] == @yml['ftp']['root_folder']
+      return @yml['ftp']['root_folder']
+    end
+    return res
+  end
+
+  def ftp_425(c = nil, args = nil)
+    @cs[:cmd].write "425 Can't open data connection.\r\n"
     0
   end
 
@@ -93,15 +113,36 @@ class FujiFtpClient
     0
   end
 
+  def ftp_501(c = nil, args = nil)
+    @cs[:cmd].write "501 Syntax error in parameters or arguments.\r\n"
+    0
+  end
+
+  def ftp_502(c = "", args = nil)
+    puts "Command '#{c}' not implemented"
+    @cs[:cmd].write "502 Command '#{c}' not implemented\r\n"
+    0
+  end
+
   def ftp_503(c = nil, args = nil)
     @cs[:cmd].write "503 Bad sequence of commands.\r\n"
     0
   end
 
-  def ftp_425(c = nil, args = nil)
-    @cs[:cmd].write "425 Can't open data connection.\r\n"
+  def ftp_530(c = nil, args = nil)
+    @cs[:cmd].write "530 Not logged in.\r\n"
     0
-  end    
+  end
+
+  def ftp_550(c = nil, args = nil)
+    @cs[:cmd].write "550 File unavailable.\r\n"
+    0
+  end
+
+  def ftp_551(c = nil, args = nil)
+    @cs[:cmd].write "551 Requested action aborted.\r\n"
+    0
+  end
 
   def ftp_syst(c = nil, args = nil)
     @cs[:cmd].write "215 UNIX Type: L8\r\n"
@@ -121,7 +162,7 @@ class FujiFtpClient
   def ftp_user(c, args)
     @connected = false
     @name = nil
-    if not @yml['ftp']['users'].has_key?(args.strip!)
+    if not @yml['ftp']['users'].has_key?(args)
       @cs[:cmd].close
       -1
     end
@@ -134,7 +175,7 @@ class FujiFtpClient
     if @name.nil?
       return ftp_503(c, args)
     end
-    if not @yml['ftp']['users'][@name] == args.strip!
+    if not @yml['ftp']['users'][@name] == args
       @cs[:cmd].write "500 Illegal username\r\n"
       @name = nil
       return 0
@@ -148,7 +189,7 @@ class FujiFtpClient
     if not @connected
       return ftp_530(c, args)
     end
-    @cs[:cmd].write "200 Type set to #{args.strip!} but everything's same for me !\r\n"
+    @cs[:cmd].write "200 Type set to #{args} but everything's same for me !\r\n"
     0
   end
 
@@ -156,16 +197,15 @@ class FujiFtpClient
     if not @connected
       return ftp_530(c, args)
     end
-    # res = ""
-    # f = @yml['ftp']['root_folder'] + args.strip
-    # Dir.entries(f).each do |entry|
-    #   res += entry + "\r\n"
-    # end
-    # puts ">>>>#{ls}<<<<"
-    # @cs[:data].write(res)
-    # puts "list send"            # 
-    # @cs[:data].close
-    ls = `ls -lA`
+    ####
+    # doto without magic quote
+    # -> File.stat
+    ####
+    if (pwd = get_realdirpath(@wd + '/' + args)).nil?
+      ftp_551
+      return 0
+    end
+    ls = `ls -lA #{pwd}`
     res = ""
     ls.each_line { |line| res += line.strip + "\r\n"}
     send_data(res)
@@ -180,6 +220,7 @@ class FujiFtpClient
       begin
         @cs[:data_accept] = TCPServer.new(port)
         @data_port = port
+        break
       rescue SystemCallError
       rescue
         puts e.message
@@ -213,6 +254,9 @@ class FujiFtpClient
     if not @connected
       return ftp_530(c, args)
     end
+    ####
+    # todo : all
+    ####
     ftp_502 c, args
     0
   end
@@ -221,7 +265,16 @@ class FujiFtpClient
     if not @connected
       return ftp_530(c, args)
     end
-    ftp_502 c, args
+    path = @wd + '/' + args
+    if (f_name = get_realpath(path)).nil?
+      ftp_550
+      return false
+    end
+    f = File.open(f_name, 'r')
+    until (data = f.read(1024)).nil?
+      send_data(data, true)
+    end
+    send_data ""
     0
   end
 
@@ -229,9 +282,25 @@ class FujiFtpClient
     if not @connected
       return ftp_530(c, args)
     end
-    ### check if not before root_folder
-    @wd = @yml['ftp']['root_folder'] + args.strip
+    if args[0] == '/'
+      tmp = args
+    elsif (tmp = get_realdirpath(@wd + '/' + args)).nil?
+      tmp = @yml['ftp']['root_folder']
+    end
+    @wd = tmp
     @cs[:cmd].write "250 CWD command successful.\r\n"
+    0
+  end
+
+  def ftp_cdup(c, args)
+    if not @connected
+      return ftp_530(c, args)
+    end
+    if (tmp = get_realdirpath(@wd + '/..')).nil?
+      tmp = @yml['ftp']['root_folder']
+    end
+    @wd = tmp
+    @cs[:cmd].write "200 directory changed to #{@wd}\r\n"
     0
   end
 
@@ -261,12 +330,13 @@ class FujiFtpClient
           if line.nil?
             break
           end
-          puts "[#{Process.pid}] Client sent : --#{line}--"
           ####
           # Handle commands here
           ####
+          line.strip!
+          puts "[#{Process.pid}] Client sent : --#{line}--"
           begin
-            func = method('ftp_' + line[/[\s]*([\w]*)[\s]+(.*)/, 1].downcase);
+            func = method('ftp_' + line[/[\s]*([\w]*)[\s]*(.*)/, 1].downcase);
             if func.call($1, $2) == -1
               break
             end
@@ -279,13 +349,7 @@ class FujiFtpClient
           ####
           # passive data socket
           ####
-          if not @cs[:data].nil?
-            @cs[:data] = nil
-          elsif not do_data_accept
-            break
-          end
-          puts "passive data socket"
-          # Kernel.exit -1
+          do_data_accept
         end
       end
     end
