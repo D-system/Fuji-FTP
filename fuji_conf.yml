@@ -4,6 +4,7 @@ ftp :
     user1 : pass1
     user2 : pass2
   anonymous : true
+  port : 4242
   data_port_min : 1024
   data_port_max : 4242
   public_ip : #94.125.163.145

@@ -4,18 +4,23 @@ include Socket::Constants
 load "fuji_ftp_client.rb"
 require 'yaml'
 
-# Volcano FTP contants
-BINARY_MODE = 0
-ASCII_MODE = 1
-MIN_PORT = 1025
-MAX_PORT = 65534
-
-# Volcano FTP class
-class VolcanoFtp
-  def initialize(port, yml_fn)
+# Fuji FTP class
+class FujiFtp
+  def initialize(yml_fn)
     # Prepare instance
     begin
-      @socket = TCPServer.new(port)
+      @yml = YAML.load(File.open(yml_fn, 'r'))
+    rescue ArgumentError => e
+      puts "Could not parse configuration file: #{e.message}"
+      puts "Exiting"
+      Kernel.exit -1
+      rescue SystemCallError => e
+      puts e
+      puts "Exiting"
+      Kernel.exit -1
+    end
+    begin
+      @socket = TCPServer.new(@yml['ftp']['port'])
     rescue SystemCallError => e
       puts e.message
       puts " -> Port #{port} already in use ?"
@@ -28,18 +33,7 @@ class VolcanoFtp
     @socket.listen(42)
     @threads = []
     @tsocket = nil
-    begin
-      @yml = YAML.load(File.open(yml_fn, 'r'))
-    rescue ArgumentError => e
-      puts "Could not parse configuration file: #{e.message}"
-      puts "Exiting"
-      Kernel.exit -1
-      rescue SystemCallError => e
-      puts e
-      puts "Exiting"
-      Kernel.exit -1
-    end
-    puts "Server ready to listen for clients on port #{port}"
+    puts "Server ready to listen for clients on port #{@yml['ftp']['port']}"
   end
 
   def run
@@ -73,14 +67,13 @@ end
 
 # Main
 
-if ARGV[0]
-  begin
-    ftp = VolcanoFtp.new(ARGV[0], 'fuji_conf.yml')
-    ftp.run
-  rescue SystemExit
-  rescue Interrupt
-    puts "Caught CTRL+C, exiting"
-  rescue RuntimeError => e
-    puts e
-  end
+begin
+  ftp = FujiFtp.new('fuji_conf.yml')
+  ftp.run
+rescue SystemExit
+  puts "Exiting."
+rescue Interrupt
+  puts "Caught CTRL+C, exiting"
+rescue RuntimeError => e
+  puts e
 end
