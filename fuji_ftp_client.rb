@@ -2,6 +2,7 @@
 require "socket"
 include Socket::Constants
 load "hash_class_eval.rb"
+require 'dbi'
 
 # Handle each client
 class FujiFtpClient
@@ -14,6 +15,19 @@ class FujiFtpClient
     @passive = nil
     @data_port = nil
     @data_socket = nil
+    begin
+      @db = DBI.connect("DBI:#{@yml['log']['db_type']}:#{@yml['log']['db_name']}:#{@yml['log']['host']}", @yml['log']['user'], @yml['log']['pass'])
+    rescue => e
+      puts e.message
+      @db = nil
+    end
+  end
+
+  def destrotor
+    @db.disconnet if @db
+    if not @cs[:cmd].closed?
+      @cs[:cmd].close
+    end
   end
 
   def get_data_socket
@@ -353,9 +367,7 @@ class FujiFtpClient
       end
     end
     puts "[#{Process.pid}] Killing connection from #{peeraddr[2]}:#{peeraddr[1]}"
-    if not @cs[:cmd].closed?
-      @cs[:cmd].close
-    end
+    destrotor
   end
 
 end
