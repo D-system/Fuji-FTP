@@ -2,7 +2,11 @@
 require "socket"
 include Socket::Constants
 load "hash_class_eval.rb"
-require 'dbi'
+require 'rubygems'
+gem 'datamapper', '=1.1.0'
+gem 'dm-core', '=1.1.0'
+gem 'dm-mongo-adapter'
+load 'collections.rb'
 
 # Handle each client
 class FujiFtpClient
@@ -15,19 +19,14 @@ class FujiFtpClient
     @passive = nil
     @data_port = nil
     @data_socket = nil
-    begin
-      @db = DBI.connect("DBI:#{@yml['log']['db_type']}:#{@yml['log']['db_name']}:#{@yml['log']['host']}", @yml['log']['user'], @yml['log']['pass'])
-    rescue => e
-      puts e.message
-      @db = nil
-    end
+    @log = LogInOut.create(:time_in => Time.now)
+    @log.save
   end
 
   def destrotor
-    @db.disconnet if @db
-    if not @cs[:cmd].closed?
-      @cs[:cmd].close
-    end
+    @cs[:cmd].close if not @cs[:cmd].closed?
+    @log.update(:time_out => Time.now,
+                  :duration => Time.now.to_time.to_i - @log['time_in'].to_time.to_i)
   end
 
   def get_data_socket
