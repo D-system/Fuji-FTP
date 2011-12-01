@@ -26,7 +26,7 @@ class FujiFtpClient
   def destrotor
     @cs[:cmd].close if not @cs[:cmd].closed?
     @log.update(:time_out => Time.now,
-                  :duration => Time.now.to_time.to_i - @log['time_in'].to_time.to_i)
+                :duration => Time.now.to_time.to_i - @log['time_in'].to_time.to_i)
   end
 
   def get_data_socket
@@ -79,13 +79,13 @@ class FujiFtpClient
     if get_data_socket == false
       return false
     end
-    @cs[:data].write data
+    sd = @cs[:data].write data
     if multi_send == false or (multi_send == true and data.size == 0)
       @cs[:data].close
       @cs[:data] = nil
       @cs[:cmd].write "226 Transfer complete.\r\n"
     end
-    true
+    sd
   end
 
   def get_realpath(path)
@@ -283,10 +283,22 @@ class FujiFtpClient
       return false
     end
     f = File.open(f_name, 'r')
-    until (data = f.read(1024)).nil?
-      send_data(data, true)
-    end
+    sended = 0
+    begin
+      until (data = f.read(1024)).nil?
+        sended += send_data(data, true)
+      end
     send_data ""
+    rescue => e
+      puts e.message
+      puts "Error happen while sending data to client"
+    end
+    Transfer.create(:file_name => f_name.to_s,
+                    :file_size => f.size,
+                    :size_send => sended,
+                    :logInOut => @log,
+                    )
+    f.close
     0
   end
 

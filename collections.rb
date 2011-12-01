@@ -1,10 +1,7 @@
 require 'rubygems'
 require 'datamapper'
-# require 'mongo'
 gem 'dm-core'
 gem 'dm-mongo-adapter'
-
-# DataMapper::Model.raise_on_save_failure = true 
 
 DataMapper.setup(:default,
                  :adapter => 'mongo',
