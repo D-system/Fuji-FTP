@@ -13,7 +13,7 @@ class FujiFtpClient
   def initialize(socket, yml)
     @cs = {:cmd => socket, :data_accept => nil, :data => nil}
     @yml = yml
-    @connected = false
+    @connected = @yml['ftp']['anonymous']
     @name = nil
     @wd = @yml['ftp']['root_folder']
     @passive = nil
@@ -172,6 +172,11 @@ class FujiFtpClient
   end
 
   def ftp_user(c, args)
+    if @yml['ftp']['anonymous'] == true
+      @connected = true
+      @cs[:cmd].write "230 User #{args} logged in.\r\n"
+      return 0
+    end
     @connected = false
     @name = nil
     if not @yml['ftp']['users'].has_key?(args)
@@ -186,6 +191,11 @@ class FujiFtpClient
   def ftp_pass(c, args)
     if @name.nil?
       return ftp_503(c, args)
+    end
+    if @yml['ftp']['anonymous'] == true
+      @connected = true
+      @cs[:cmd].write "230 User #{args} logged in.\r\n"
+      return 0
     end
     if not @yml['ftp']['users'][@name] == args
       @cs[:cmd].write "500 Illegal username\r\n"
