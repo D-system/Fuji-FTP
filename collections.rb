@@ -31,5 +31,3 @@ class Transfer
 end
 
 DataMapper.finalize
-
-# l = LogInOut.create()

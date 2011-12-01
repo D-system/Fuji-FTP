@@ -1,7 +1,10 @@
 #!/usr/bin/env ruby
+
+$LOAD_PATH.push(File.dirname(__FILE__))
+
 require "socket"
 include Socket::Constants
-load "fuji_ftp_client.rb"
+require "fuji_ftp_client"
 require 'yaml'
 
 # Fuji FTP class
@@ -68,7 +71,7 @@ end
 # Main
 
 begin
-  ftp = FujiFtp.new('fuji_conf.yml')
+  ftp = FujiFtp.new(File.dirname(__FILE__) + '/fuji_conf.yml')
   ftp.run
 rescue SystemExit
   puts "Exiting."

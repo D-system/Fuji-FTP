@@ -1,12 +1,12 @@
 
 require "socket"
 include Socket::Constants
-load "hash_class_eval.rb"
+require "hash_class_eval"
 require 'rubygems'
 gem 'datamapper', '=1.1.0'
 gem 'dm-core', '=1.1.0'
 gem 'dm-mongo-adapter'
-load 'collections.rb'
+require 'collections'
 
 # Handle each client
 class FujiFtpClient
