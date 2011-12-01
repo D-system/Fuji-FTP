@@ -215,21 +215,56 @@ class FujiFtpClient
     0
   end
 
+  def _ftp_list_mode(p_name, mode)
+    if p_name.symlink?
+      res = "l"
+    elsif p_name.directory?
+      res = "d"
+    else
+      res = "-"
+    end
+    mode[/(\d)(\d)(\d)$/]
+    mode[mode.size - 3..mode.size - 1].each_char do |c|
+      if c == '7'
+        res += 'rwx'
+      elsif c == '6'
+        res += 'rw-'
+      elsif c == '5'
+        res += 'r-x'
+      elsif c == '4'
+        res += 'r--'
+      elsif c == '3'
+        res += '-wx'
+      elsif c == '2'
+        res += '-w-'
+      elsif c == '1'
+        res += '--x'
+      elsif c == '0'
+        res += '---'
+      end
+    end
+    res
+  end
+
   def ftp_list(c, args)
     if not @connected
       return ftp_530(c, args)
     end
-    ####
-    # doto without magic quote
-    # -> File.stat
-    ####
     if (pwd = get_realdirpath(@wd + '/' + args)).nil?
       ftp_551
       return 0
     end
-    ls = `ls -lA #{pwd}`
     res = ""
-    ls.each_line { |line| res += line.strip + "\r\n"}
+    Dir.new(pwd).sort.each do |f_name|
+      f = Pathname.new(pwd + '/' + f_name)
+      mode = _ftp_list_mode(f, sprintf("%o", f.stat.mode))
+      link = f.stat.nlink.to_s
+      uid = Etc.getpwuid(f.stat.uid).name
+      gid =  Etc.getpwuid(f.stat.gid).name
+      size = f.stat.size.to_s
+      time = f.stat.ctime.strftime("%b %e %H:%M")
+      res += "#{mode} #{link} #{uid} #{gid} #{size} #{time} #{f_name}\r\n"
+    end
     send_data(res)
     0
   end
