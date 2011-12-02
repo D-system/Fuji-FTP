@@ -19,6 +19,7 @@ class FujiFtpClient
     @passive = nil
     @data_port = nil
     @data_socket = nil
+    @binary = ''
     @log = LogInOut.create(:time_in => Time.now)
     @log.save
   end
@@ -77,7 +78,7 @@ class FujiFtpClient
 
   def send_data(data, multi_send = false)
     if get_data_socket == false
-      return false
+      raise "No data socket"
     end
     sd = @cs[:data].write data
     if multi_send == false or (multi_send == true and data.size == 0)
@@ -86,6 +87,20 @@ class FujiFtpClient
       @cs[:cmd].write "226 Transfer complete.\r\n"
     end
     sd
+  end
+
+  def receive_data()
+    if get_data_socket == false
+      raise "No data socket"
+    end
+    if (IO.select([@cs[:data]], nil, nil, 10)).nil?
+      return nil
+    end
+    if @cs[:data].closed?
+      @cs[:data] = nil
+      return nil
+    end
+    @cs[:data].recv(1024)
   end
 
   def get_realpath(path)
@@ -211,7 +226,16 @@ class FujiFtpClient
     if not @connected
       return ftp_530(c, args)
     end
-    @cs[:cmd].write "200 Type set to #{args} but everything's same for me !\r\n"
+    case args
+    when 'I'
+      @cs[:cmd].write "200 Type set to #{args} (binary mode)\r\n"
+      @binary = 'b'
+    when 'A'
+      @cs[:cmd].write "200 Type set to #{args} (ascii mode)\r\n"
+      @binary = ''
+    else
+      ftp_501(c, args)
+    end
     0
   end
 
@@ -255,17 +279,22 @@ class FujiFtpClient
       return 0
     end
     res = ""
-    Dir.new(pwd).sort.each do |f_name|
-      f = Pathname.new(pwd + '/' + f_name)
-      mode = _ftp_list_mode(f, sprintf("%o", f.stat.mode))
-      link = f.stat.nlink.to_s
-      uid = Etc.getpwuid(f.stat.uid).name
-      gid =  Etc.getpwuid(f.stat.gid).name
-      size = f.stat.size.to_s
-      time = f.stat.ctime.strftime("%b %e %H:%M")
-      res += "#{mode} #{link} #{uid} #{gid} #{size} #{time} #{f_name}\r\n"
+    begin
+      Dir.new(pwd).sort.each do |f_name|
+        f = Pathname.new(pwd + '/' + f_name)
+        mode = _ftp_list_mode(f, sprintf("%o", f.stat.mode))
+        link = f.stat.nlink.to_s
+        uid = Etc.getpwuid(f.stat.uid).name
+        gid =  Etc.getgrgid(f.stat.gid).name
+        size = f.stat.size.to_s
+        time = f.stat.ctime.strftime("%b %e %H:%M")
+        res += "#{mode} #{link} #{uid} #{gid} #{size} #{time} #{f_name}\r\n"
+      end
+      send_data(res)
+    rescue => e
+      p e.message
+      ftp_551
     end
-    send_data(res)
     0
   end
 
@@ -282,6 +311,7 @@ class FujiFtpClient
       rescue
         puts e.message
         puts "Something goes very bad in PASV command"
+        ftp_551
         return -1
       end
     end
@@ -311,10 +341,33 @@ class FujiFtpClient
     if not @connected
       return ftp_530(c, args)
     end
-    ####
-    # todo : all
-    ####
-    ftp_502 c, args
+    path = @wd + '/' + args
+    if (f_name = get_realdirpath(path)).nil? or f_name == @yml['ftp']['root_folder']
+      ftp_550
+      return false
+    end
+    begin
+      f = File.open(f_name, 'w' + @binary)
+    rescue => e
+      puts e.message
+      return 0
+    end
+    recieved = 0
+    begin
+      until (data = receive_data).nil?
+        recieved += data.size
+        f.write data
+      end
+      Transfer.create(:file_name => f_name.to_s,
+                      :file_size => f.size,
+                      :size_send => recieved,
+                      :logInOut => @log,
+                      )
+    rescue => e
+      puts e.message
+      puts "Error happen while receiving data from client"
+    end
+    f.close
     0
   end
 
@@ -327,22 +380,23 @@ class FujiFtpClient
       ftp_550
       return false
     end
-    f = File.open(f_name, 'r')
-    sended = 0
     begin
+      f = File.open(f_name, 'r' + @binary)
+      sended = 0
       until (data = f.read(1024)).nil?
         sended += send_data(data, true)
       end
-    send_data ""
+      send_data ""
+      Transfer.create(:file_name => f_name.to_s,
+                      :file_size => f.size,
+                      :size_send => sended,
+                      :logInOut => @log,
+                      )
     rescue => e
       puts e.message
       puts "Error happen while sending data to client"
+      ftp_551
     end
-    Transfer.create(:file_name => f_name.to_s,
-                    :file_size => f.size,
-                    :size_send => sended,
-                    :logInOut => @log,
-                    )
     f.close
     0
   end
